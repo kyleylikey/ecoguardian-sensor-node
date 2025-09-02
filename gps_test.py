@@ -1,7 +1,7 @@
 import serial
 import time
 
-def test_a9g(port="/dev/serial0", baud=115200):
+def test_a9g(port="/dev/serial0", baud=9600):
     print("=" * 40)
     print(f"Testing A9G at {baud} baud")
     try:
