@@ -12,8 +12,11 @@ def test_a9g(port="/dev/serial0", baud=9600):
         ser.write(b"AT\r\n")
         time.sleep(1)
         raw = ser.read_all()
-        print("Raw reply to AT:", raw)
-        print("Decoded reply:", raw.decode(errors="ignore"))
+        print("Raw reply (hex):", raw.hex())
+        try:
+            print("Decoded reply:", raw.decode("ascii"))
+        except:
+            print("Decoded reply: <not valid ASCII>")
 
         if b"OK" in raw:
             print("A9G is alive!\n")
