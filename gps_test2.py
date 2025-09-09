@@ -2,7 +2,6 @@ import serial
 import time
 
 # --- Helpers for NMEA parsing ---
-
 def convert_to_decimal(coord, direction):
     """Convert NMEA coordinates into decimal degrees."""
     if not coord or coord == "0":
@@ -42,25 +41,35 @@ except Exception as e:
 
 print("[INFO] Listening for GPS data...")
 
+last_info_time = 0
+interval = 10  # seconds between INFO updates
+
 try:
     while True:
         line = ser.readline().decode(errors="ignore").strip()
         if not line:
             continue
 
-        print(f"[DEBUG] Raw NMEA: {line}")  # show raw NMEA sentences
-
         if line.startswith("$GNGGA"):
             gps_data = parse_gngga(line)
-            if gps_data:
-                print("[INFO] Parsed GPS Data:")
-                print(f"  Time (UTC): {gps_data['time_utc']}")
-                print(f"  Latitude : {gps_data['latitude']}")
-                print(f"  Longitude: {gps_data['longitude']}")
-                print(f"  Altitude : {gps_data['altitude_m']} m")
-                print(f"  Satellites: {gps_data['satellites']}")
-                print("-----------")
-        time.sleep(0.2)
+            if gps_data and gps_data["fix_quality"] != "0":
+                now = time.time()
+                if now - last_info_time >= interval:
+                    print("[INFO] Parsed GPS Data:")
+                    print(f"  Time (UTC): {gps_data['time_utc']}")
+                    print(f"  Latitude : {gps_data['latitude']}")
+                    print(f"  Longitude: {gps_data['longitude']}")
+                    print(f"  Altitude : {gps_data['altitude_m']} m")
+                    print(f"  Satellites: {gps_data['satellites']}")
+                    print("-----------")
+                    last_info_time = now
+            else:
+                print("[WARN] No GPS fix yet. Possible reasons:")
+                print("  - Wiring issue (TX/RX swapped, missing GND)")
+                print("  - A9G not powered correctly")
+                print("  - GPS needs more time to lock (try outdoors, wait 1–2 mins)")
+                time.sleep(1)  # slow down warnings
+        time.sleep(0.1)
 
 except KeyboardInterrupt:
     print("\n[INFO] GPS reading stopped by user.")
