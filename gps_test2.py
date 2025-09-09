@@ -1,48 +1,67 @@
 import serial
 import time
 
-# Open serial port
+# --- Helpers for NMEA parsing ---
+
+def convert_to_decimal(coord, direction):
+    """Convert NMEA coordinates into decimal degrees."""
+    if not coord or coord == "0":
+        return None
+    if direction in ["N", "S"]:  # latitude
+        degrees = int(coord[:2])
+        minutes = float(coord[2:])
+    else:  # longitude
+        degrees = int(coord[:3])
+        minutes = float(coord[3:])
+    decimal = degrees + minutes / 60
+    if direction in ["S", "W"]:
+        decimal = -decimal
+    return round(decimal, 6)
+
+def parse_gngga(sentence):
+    """Parse a GNGGA sentence and extract useful data."""
+    parts = sentence.split(",")
+    if len(parts) < 15:
+        return None
+    return {
+        "time_utc": parts[1],
+        "latitude": convert_to_decimal(parts[2], parts[3]),
+        "longitude": convert_to_decimal(parts[4], parts[5]),
+        "fix_quality": parts[6],
+        "satellites": parts[7],
+        "altitude_m": parts[9]
+    }
+
+# --- Serial setup ---
 try:
-    ser = serial.Serial('/dev/ttyS0', baudrate=115200, timeout=1)
+    ser = serial.Serial("/dev/ttyS0", baudrate=9600, timeout=1)
     print("[INFO] Serial port opened successfully: /dev/ttyS0")
 except Exception as e:
-    print("[ERROR] Could not open serial port /dev/ttyS0")
-    print("Details:", e)
+    print(f"[ERROR] Could not open serial port: {e}")
     exit(1)
 
-def send_command(cmd, delay=1):
-    """Send AT command to A9G and return response"""
-    print(f"[DEBUG] Sending command: {cmd}")
-    ser.write((cmd + "\r\n").encode())  # send with CR+LF
-    time.sleep(delay)
-    response = ser.read(200).decode(errors="ignore").strip()
-    
-    if response:
-        print(f"[DEBUG] Raw response: {response}")
-    else:
-        print("[WARN] No response received. (Check wiring, GPS power, or AT+GPS=1)")
-    
-    return response
+print("[INFO] Listening for GPS data...")
 
-# Enable GPS
-print("[INFO] Enabling GPS module...")
-resp = send_command("AT+GPS=1", 2)
-if not resp:
-    print("[WARN] No response to AT+GPS=1. Module may not be connected or powered.")
-else:
-    print("[INFO] GPS module responded to AT+GPS=1")
+try:
+    while True:
+        line = ser.readline().decode(errors="ignore").strip()
+        if not line:
+            continue
 
-# Loop to get GPS location
-while True:
-    print("[INFO] Requesting GPS location (AT+LOCATION=2)...")
-    response = send_command("AT+LOCATION=2", 3)
-    
-    if not response:
-        print("[WARN] Still no GPS data. Possible reasons:")
-        print("  - TX/RX wiring swapped or missing GND")
-        print("  - A9G not powered correctly")
-        print("  - GPS not yet fixed (try outdoors, may take 1–2 mins)")
-    else:
-        print("[INFO] GPS Response:", response)
-    
-    time.sleep(5)
+        print(f"[DEBUG] Raw NMEA: {line}")  # show raw NMEA sentences
+
+        if line.startswith("$GNGGA"):
+            gps_data = parse_gngga(line)
+            if gps_data:
+                print("[INFO] Parsed GPS Data:")
+                print(f"  Time (UTC): {gps_data['time_utc']}")
+                print(f"  Latitude : {gps_data['latitude']}")
+                print(f"  Longitude: {gps_data['longitude']}")
+                print(f"  Altitude : {gps_data['altitude_m']} m")
+                print(f"  Satellites: {gps_data['satellites']}")
+                print("-----------")
+        time.sleep(0.2)
+
+except KeyboardInterrupt:
+    print("\n[INFO] GPS reading stopped by user.")
+    ser.close()
