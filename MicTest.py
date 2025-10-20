@@ -8,7 +8,7 @@ import sys
 
 # CRITICAL: Update this based on the 'arecord -l' output.
 # The output showed: card 1, device 0. So we use "plughw:1,0"
-AUDIO_DEVICE = "plughw:1,0" 
+AUDIO_DEVICE = "default" 
 DURATION_SECONDS = 5
 RECORDINGS_DIR = "recordings"
 
@@ -39,8 +39,8 @@ def record_audio_clip():
     command = [
         "arecord",
         "-D", AUDIO_DEVICE,
-        "-f", "S16_LE",
-        "-r", "44100",
+        "-f", "S32_LE",
+        "-r", "16000",
         "-c", "1",
         "-d", str(DURATION_SECONDS),
         filepath

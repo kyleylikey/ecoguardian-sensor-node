@@ -77,14 +77,13 @@ pcm.dmic_sv {
     slave.pcm dmic_hw
     control {
         name "Boost Capture Volume"
-        card sndrpigooglevoi
+        card 1
     }
     # These min/max values allow for boosting the low-gain signal
     min_dB -3.0
     max_dB 30.0
 }
 
-# OPTIONAL: Set a default device to the software volume control
 pcm.!default {
     type plug
     slave.pcm "dmic_sv"
