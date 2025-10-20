@@ -3,7 +3,7 @@ set -e
 
 # Install system dependencies (first time only)
 sudo apt update
-sudo apt install -y python3-full python3-venv python3-pip libgpiod2
+sudo apt install -y python3-full python3-venv python3-pip libgpiod3
 
 # Create virtual environment if missing
 if [ ! -d "venv" ]; then
