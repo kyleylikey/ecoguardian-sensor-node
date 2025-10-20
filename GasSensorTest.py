@@ -8,7 +8,7 @@ import math
 # Setup ADS1115
 i2c = busio.I2C(board.SCL, board.SDA)
 ads = ADS.ADS1115(i2c)
-chan = AnalogIn(ads, ADS.P0)
+chan = AnalogIn(ads, 0)
 
 # Constants
 VCC = 5.0     # sensor powered at 5V
