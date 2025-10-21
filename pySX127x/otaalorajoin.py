@@ -10,25 +10,23 @@ from Crypto.Hash import CMAC
 lora = SX127x()
 lora.begin()
 
-UPLINK_CHANNELS = [916600000, 916800000]
-JOIN_CHANNEL = 916800000      # AS923-3 join channel
-RX2_FREQ = 923300000          # AS923-3 RX2 frequency
-RX2_SF = 10                   # AS923-3 RX2 Spreading Factor (DR2)
-channel_index = 0
-FREQ_COMPENSATION = 0
+# Try all gateway RX channels for Join Request
+JOIN_CHANNELS = [916600000, 916800000, 917000000, 917200000, 917600000, 917800000, 918000000, 918200000]
+RX2_FREQ = 916600000           # ChirpStack RX2 frequency
+RX2_SF = 10                    # RX2 Spreading Factor
 
-# Set initial radio parameters (will be changed for Join)
+# Set initial radio parameters
 lora.setLoRaModulation(7, 125000, 5, False)
-lora.setSyncWord(0x34) # 0x34 for public, 0x12 for private
+lora.setSyncWord(0x34)  # 0x34 for LoRaWAN public
 lora.setTxPower(14, 1)
 lora.setLoRaPacket(lora.HEADER_EXPLICIT, 8, 255, True, False)
 
-# --- OTAA Keys (From your logs) ---
+# --- OTAA Keys ---
 DevEUI = bytes.fromhex("2ccf67fffe203bf5")
-JoinEUI = bytes.fromhex("311ca7e09018d9ec") # Updated JoinEUI
-AppKey = bytes.fromhex("490026878401980550897019dc784bad")
+JoinEUI = bytes.fromhex("311ca7e09018d9ec")
+AppKey = bytes.fromhex("f3fa2f0d1d52a7764b4ece4afef53afd")
 
-# Session keys (will be set after join)
+# Session keys
 DevAddr = None
 NwkSKey = None
 AppSKey = None
@@ -53,303 +51,197 @@ def derive_session_key(appkey, key_type, appnonce, netid, devnonce):
     data[7:9] = devnonce
     return aes128_encrypt(appkey, bytes(data))
 
-# --- Join Accept Validator (Helper Function) ---
+# --- Join Accept Validator ---
 def validate_and_process_join_accept(join_accept_raw, appkey, dev_nonce_bytes):
     """Checks a raw packet. If it's a valid Join Accept, it processes it."""
     global DevAddr, NwkSKey, AppSKey
-    
-    print(f"\nReceived packet: {join_accept_raw.hex()}")
 
-    # 1. Verify MHDR (should be 0x20 for Join Accept)
+    print(f"\n  Received packet ({len(join_accept_raw)} bytes): {join_accept_raw.hex()}")
+
+    # Minimum length check
+    if len(join_accept_raw) < 17:
+        print(f"  → Too short, ignoring")
+        return False
+
+    # 1. Verify MHDR
     mhdr_recv = join_accept_raw[0]
     if mhdr_recv != 0x20:
-        print(f"Error: Not a Join Accept (MHDR: 0x{mhdr_recv:02x}). Discarding.")
-        return False  # Not a Join Accept
+        print(f"  → Wrong MHDR (0x{mhdr_recv:02x}), ignoring")
+        return False
 
-    # 2. Validate MIC
-    msg_to_mic = join_accept_raw[:-4]
-    mic_recv = join_accept_raw[-4:]
+    print(f"  → Valid MHDR! Attempting to decrypt...")
+
+    # 2. Decrypt (Join Accept is encrypted with AppKey)
+    encrypted_payload = join_accept_raw[1:]
+    
+    block = encrypted_payload
+    if len(block) % 16 != 0:
+        block = block + bytes(16 - (len(block) % 16))
+
+    decrypted_full = aes128_encrypt(appkey, block)
+    decrypted = decrypted_full[:len(encrypted_payload)]
+    print(f"  → Decrypted: {decrypted.hex()}")
+
+    # 3. Validate MIC
+    msg_to_mic = bytearray([mhdr_recv]) + decrypted[:-4]
+    mic_recv = decrypted[-4:]
 
     cmac = CMAC.new(appkey, ciphermod=AES)
     cmac.update(msg_to_mic)
     mic_calc = cmac.digest()[:4]
 
     if mic_recv != mic_calc:
-        print(f"Error: Invalid Join Accept MIC. Discarding.")
-        print(f"  Received:   {mic_recv.hex()}")
-        print(f"  Calculated: {mic_calc.hex()}")
-        return False  # Bad MIC
+        print(f"  → Invalid MIC (recv: {mic_recv.hex()}, calc: {mic_calc.hex()})")
+        return False
 
-    print("✓ Join Accept MIC is valid!")
+    print("  → ✓ Valid Join Accept MIC!")
 
-    # 3. Correct Decryption (LoRaWAN spec: encrypt with AppKey)
-    encrypted_payload = join_accept_raw[1:-4]
-    
-    # Pad if necessary for AES block size
-    block = encrypted_payload
-    if len(block) % 16 != 0:
-        block = block + bytes(16 - (len(block) % 16))
-    
-    decrypted = aes128_encrypt(appkey, block)
-    
-    # Trim to actual payload length
-    decrypted = decrypted[:len(encrypted_payload)]
-    print(f"Decrypted Join Accept: {decrypted.hex()}")
+    # 4. Parse
+    if len(decrypted) < 16:
+        print("  → Decrypted payload too short")
+        return False
 
-    # 4. Parse Decrypted Payload
     AppNonce = decrypted[0:3]
     NetID = decrypted[3:6]
-    DevAddr = decrypted[6:10] # Stored in Big-Endian format
+    DevAddr = decrypted[6:10]
     DLSettings = decrypted[10]
     RxDelay = decrypted[11]
 
-    print(f"\nJoin Accept parsed:")
-    print(f"  AppNonce: {AppNonce.hex()}")
-    print(f"  NetID: {NetID.hex()}")
-    print(f"  DevAddr: {DevAddr.hex()}")
-    print(f"  DLSettings: 0x{DLSettings:02x}")
-    print(f"  RxDelay: {RxDelay}")
+    print(f"\n  Join Accept Details:")
+    print(f"    AppNonce: {AppNonce.hex()}")
+    print(f"    NetID: {NetID.hex()}")
+    print(f"    DevAddr: {DevAddr.hex()}")
+    print(f"    DLSettings: 0x{DLSettings:02x}")
+    print(f"    RxDelay: {RxDelay}")
 
     # 5. Derive session keys
     NwkSKey = derive_session_key(appkey, 0x01, AppNonce, NetID, dev_nonce_bytes)
     AppSKey = derive_session_key(appkey, 0x02, AppNonce, NetID, dev_nonce_bytes)
 
-    print(f"\nSession keys derived:")
-    print(f"  NwkSKey: {NwkSKey.hex()}")
-    print(f"  AppSKey: {AppSKey.hex()}")
-    print("\n✓ Join successful! Device is now activated.\n")
+    print(f"\n  Session Keys:")
+    print(f"    NwkSKey: {NwkSKey.hex()}")
+    print(f"    AppSKey: {AppSKey.hex()}")
+    print("\n✓ ✓ ✓ JOIN SUCCESSFUL! ✓ ✓ ✓\n")
 
-    return True  # Success!
+    return True
 
 # --- Join Procedure ---
-def join_network():
+def join_network_on_channel(join_channel):
+    """Attempt join on a specific channel"""
     global dev_nonce
 
-    print("=" * 50)
-    print("Starting OTAA Join Procedure...")
-    print("=" * 50)
+    print(f"\n{'='*60}")
+    print(f"Attempting Join on {join_channel/1e6:.1f} MHz")
+    print(f"{'='*60}")
 
     # Generate DevNonce
     dev_nonce = random.randint(0, 65535)
-    dev_nonce_bytes = struct.pack('<H', dev_nonce) # Little-endian
+    dev_nonce_bytes = struct.pack('<H', dev_nonce)
 
     # Build Join Request
-    mhdr = 0x00  # Join Request
+    mhdr = 0x00
     join_payload = bytearray()
     join_payload.append(mhdr)
-    join_payload.extend(JoinEUI[::-1])  # Little-endian
-    join_payload.extend(DevEUI[::-1])  # Little-endian
+    join_payload.extend(JoinEUI[::-1])
+    join_payload.extend(DevEUI[::-1])
     join_payload.extend(dev_nonce_bytes)
 
-    # Calculate MIC for Join Request
+    # Calculate MIC
     cmac = CMAC.new(AppKey, ciphermod=AES)
     cmac.update(bytes(join_payload))
     mic = cmac.digest()[:4]
     join_payload.extend(mic)
 
-    print(f"DevEUI: {DevEUI.hex()}")
-    print(f"JoinEUI: {JoinEUI.hex()}")
     print(f"DevNonce: {dev_nonce} (0x{dev_nonce:04x})")
     print(f"Join Request: {join_payload.hex()}")
 
-    # --- FIX 1: Set SF10 for Join Request ---
-    print(f"Setting radio to SF10/125kHz for Join Request...")
+    # Configure and send
+    lora.setFrequency(join_channel)
     lora.setLoRaModulation(10, 125000, 5, False)
-    lora.setInvertIq(False) # Uplinks are NOT inverted
+    lora.setLoRaPacket(lora.HEADER_EXPLICIT, 8, 255, True, False)
 
-    # Send Join Request on join channel
-    lora.setFrequency(JOIN_CHANNEL)
     lora.beginPacket()
     lora.write(list(join_payload), len(join_payload))
     lora.endPacket()
     lora.wait()
 
-    print(f"Join Request sent on {JOIN_CHANNEL/1e6:.1f} MHz")
-    print("Waiting for Join Accept...")
+    print(f"→ Join Request SENT")
+    print(f"\nListening for Join Accept...")
 
-    # --- FIX 2: Implement RX1 and RX2 Windows ---
     # --- RX1 Window ---
-    # Opens 5 seconds after TX (JOIN_ACCEPT_DELAY1)
-    print("Waiting for RX1 window (t+5s)...")
-    time.sleep(5)
-    
-    print(f"Configuring for RX1 on {JOIN_CHANNEL/1e6:.1f} MHz (SF10)...")
-    # --- THIS IS THE FIX ---
-    # Explicitly set all parameters for RX1
-    lora.setFrequency(JOIN_CHANNEL)
+    print(f"  RX1 (t+5s): {join_channel/1e6:.1f} MHz, SF10")
+    lora.setFrequency(join_channel)
     lora.setLoRaModulation(10, 125000, 5, False)
-    lora.setInvertIq(True) # Downlinks ARE inverted
-    # ------------------------
+    lora.setLoRaPacket(lora.HEADER_EXPLICIT, 8, 255, True, True)
     
-    lora.request() # Put radio in RX mode
-    
-    # Listen for ~0.9 seconds
-    start = time.time()
-    while time.time() - start < 0.9:
-        if lora.available():
-            length = lora.available()
-            join_accept_raw = bytes(lora.read(length))
-            if validate_and_process_join_accept(join_accept_raw, AppKey, dev_nonce_bytes):
-                return True # Success!
-        time.sleep(0.02) # Short poll
+    time.sleep(5)
+    lora.request()
 
-    # --- RX2 Window ---
-    # Opens 6 seconds after TX (JOIN_ACCEPT_DELAY2)
-    # AS923-3: 923.3 MHz, SF10 (DR2)
-    print(f"Switching to RX2 on {RX2_FREQ/1e6:.1f} MHz (SF{RX2_SF})...")
-    lora.setFrequency(RX2_FREQ)
-    lora.setLoRaModulation(RX2_SF, 125000, 5, False)
-    lora.setInvertIq(True)
-    lora.request() # Put radio in RX mode on new settings
-    
-    # We already waited ~5.9s. RX2 opens at 6s.
-    # Sleep for the remaining fraction + listen duration
-    time.sleep(0.1) # Wait for t=6s to be certain
-    
     start = time.time()
-    while time.time() - start < 2.0: # Listen for 2 seconds
+    while time.time() - start < 1.0:
         if lora.available():
             length = lora.available()
             join_accept_raw = bytes(lora.read(length))
             if validate_and_process_join_accept(join_accept_raw, AppKey, dev_nonce_bytes):
-                return True # Success!
+                return True
         time.sleep(0.02)
 
-    # If we get here, both windows timed out
-    print("\n✗ Join Accept timeout - no response received in RX1 or RX2")
-    print("  Check: Gateway is online, device keys match ChirpStack\n")
+    # --- RX2 Window ---
+    print(f"  RX2 (t+6s): {RX2_FREQ/1e6:.1f} MHz, SF{RX2_SF}")
+    lora.setFrequency(RX2_FREQ)
+    lora.setLoRaModulation(RX2_SF, 125000, 5, False)
+    lora.setLoRaPacket(lora.HEADER_EXPLICIT, 8, 255, True, True)
+    lora.request()
+
+    time.sleep(0.1)
+
+    start = time.time()
+    while time.time() - start < 2.0:
+        if lora.available():
+            length = lora.available()
+            join_accept_raw = bytes(lora.read(length))
+            if validate_and_process_join_accept(join_accept_raw, AppKey, dev_nonce_bytes):
+                return True
+        time.sleep(0.02)
+
+    print(f"  → No Join Accept received")
     return False
-
-# --- LoRaWAN Frame Construction ---
-def lorawan_encrypt(key, devaddr, fcnt, payload, direction=0):
-    """Encrypt payload for uplink (direction=0) or downlink (direction=1)"""
-    k = len(payload) // 16 + 1
-    s = bytearray()
-    for i in range(k):
-        a = bytearray(16)
-        a[0] = 0x01
-        a[5] = direction
-        a[6:10] = devaddr[::-1] # DevAddr in little-endian
-        a[10:14] = struct.pack('<I', fcnt) # FCnt in little-endian
-        a[15] = i + 1
-        s.extend(aes128_encrypt(key, bytes(a)))
-    encrypted = bytearray()
-    for i in range(len(payload)):
-        encrypted.append(payload[i] ^ s[i])
-    return bytes(encrypted)
-
-def calculate_mic(key, mhdr, devaddr, fcnt, fport, payload):
-    """Calculate MIC for uplink frame"""
-    b0 = bytearray(16)
-    b0[0] = 0x49
-    b0[5] = 0x00  # Direction: uplink
-    b0[6:10] = devaddr[::-1] # DevAddr in little-endian
-    b0[10:14] = struct.pack('<I', fcnt) # FCnt in little-endian
-    
-    msg = bytearray()
-    msg.append(mhdr)
-    msg.extend(devaddr[::-1]) # DevAddr in little-endian
-    msg.append(0x00)  # FCtrl
-    msg.extend(struct.pack('<H', fcnt)) # FCnt (lower 16 bits) in little-endian
-    msg.append(fport)
-    msg.extend(payload)
-
-    # --- FIX 3: Set b0[15] to the length of the message ---
-    b0[15] = len(msg)
-    # ----------------------------------------------------
-
-    cmac = CMAC.new(key, ciphermod=AES)
-    cmac.update(bytes(b0))
-    cmac.update(bytes(msg))
-    return cmac.digest()[:4]
-
-def make_uplink(payload_str):
-    """Create LoRaWAN uplink frame"""
-    global frame_counter
-
-    if DevAddr is None or NwkSKey is None or AppSKey is None:
-        raise Exception("Device not joined! Run join_network() first.")
-
-    payload_bytes = payload_str.encode()
-    encrypted_payload = lorawan_encrypt(AppSKey, DevAddr, frame_counter, payload_bytes, direction=0)
-
-    mhdr = 0x40  # Unconfirmed Data Up
-    fport = 1
-    
-    # Note: DevAddr is already stored Big-Endian from Join Accept
-    # calculate_mic and lorawan_encrypt handle flipping it to little-endian
-    mic = calculate_mic(NwkSKey, mhdr, DevAddr, frame_counter, fport, encrypted_payload)
-
-    frame = bytearray()
-    frame.append(mhdr)
-    frame.extend(DevAddr[::-1]) # DevAddr in little-endian
-    frame.append(0x00)  # FCtrl
-    frame.extend(struct.pack('<H', frame_counter)) # FCnt (lower 16 bits)
-    frame.append(fport)
-    frame.extend(encrypted_payload)
-    frame.extend(mic)
-
-    return bytes(frame)
 
 # --- Main Execution ---
 if __name__ == "__main__":
-    print("\n" + "=" * 50)
-    print("LoRaWAN OTAA Device - AS923-3")
-    print("=" * 50 + "\n")
+    print("\n" + "=" * 60)
+    print("LoRaWAN OTAA Diagnostic Tool - AS923-3")
+    print("=" * 60)
+    print("\nThis script will try joining on ALL gateway channels")
+    print("to help identify which frequency is working.\n")
 
-    # Attempt to join
-    max_join_attempts = 3
-    for attempt in range(1, max_join_attempts + 1):
-        print(f"Join attempt {attempt}/{max_join_attempts}")
-        if join_network():
-            break
-        if attempt < max_join_attempts:
-            print(f"Retrying in 10 seconds...\n")
-            time.sleep(10)
-    else:
-        print("Failed to join after all attempts. Exiting.")
-        sys.exit(1)
+    print("Device Info:")
+    print(f"  DevEUI: {DevEUI.hex()}")
+    print(f"  JoinEUI: {JoinEUI.hex()}")
+    print(f"  AppKey: {AppKey.hex()}")
+    print(f"\nGateway Channels to Test: {[f'{f/1e6:.1f}' for f in JOIN_CHANNELS]} MHz")
+    print(f"RX2 Configuration: {RX2_FREQ/1e6:.1f} MHz, SF{RX2_SF}")
+    
+    input("\nPress Enter to start join attempts...")
 
-    # Start uplink loop
-    print("=" * 50)
-    print("Starting uplink transmission loop...")
-    print("=" * 50 + "\n")
+    # Try each channel
+    for channel in JOIN_CHANNELS:
+        if join_network_on_channel(channel):
+            print(f"\n{'='*60}")
+            print(f"SUCCESS! Device joined on {channel/1e6:.1f} MHz")
+            print(f"{'='*60}\n")
+            sys.exit(0)
+        
+        print("\nWaiting 5 seconds before next attempt...\n")
+        time.sleep(5)
 
-    try:
-        while True:
-            current_freq = UPLINK_CHANNELS[channel_index % len(UPLINK_CHANNELS)]
-            compensated_freq = current_freq + FREQ_COMPENSATION
-            lora.setFrequency(compensated_freq)
-
-            # --- FIX 4: Set SF7 for Data Uplinks ---
-            lora.setLoRaModulation(7, 125000, 5, False)
-            lora.setInvertIq(False)
-            # ---------------------------------------
-
-            payload = make_uplink("EcoPing")
-            print(f"[{time.strftime('%H:%M:%S')}] Frame #{frame_counter} | "
-                  f"Freq: {current_freq/1e6:.1f} MHz (SF7) | "
-                  f"Payload: {payload.hex()}")
-
-            payload_list = list(payload)
-            lora.beginPacket()
-            lora.write(payload_list, len(payload_list))
-            lora.endPacket()
-            tx_status = lora.wait(timeout=5000)  # Wait max 5 seconds
-
-            if tx_status:
-                print(f"  ✓ TX completed successfully")
-            else:
-                print(f"  ✗ TX failed or timeout!")
-
-            frame_counter += 1
-            channel_index += 1
-
-            # TODO: Add downlink listening logic here in RX1/RX2
-            
-            time.sleep(15)  # Wait before next transmission
-
-    except KeyboardInterrupt:
-        print("\n\nTransmission stopped by user")
-        print(f"Total frames sent: {frame_counter}")
-        sys.exit(0)
+    print("\n" + "="*60)
+    print("FAILED - No successful join on any channel")
+    print("="*60)
+    print("\nTroubleshooting steps:")
+    print("1. Check gateway is online and receiving packets")
+    print("2. Verify keys match in ChirpStack device configuration")
+    print("3. Check ChirpStack Gateway 'Live LoRaWAN frames' tab")
+    print("4. Verify gateway global.json has no syntax errors")
+    print("5. Check gateway service logs: journalctl -u chirpstack-* -f")
+    sys.exit(1)
