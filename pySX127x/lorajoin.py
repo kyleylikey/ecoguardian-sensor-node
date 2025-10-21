@@ -17,7 +17,7 @@ channel_index = 0
 
 # Frequency compensation for crystal error (adjust if needed)
 # Your module transmits ~100kHz lower than set frequency
-FREQ_COMPENSATION = 100000  # +100 kHz to compensate
+FREQ_COMPENSATION = 0  # +100 kHz to compensate
 
 # Configure modem parameters (will set frequency in loop)
 lora.setLoRaModulation(7, 125000, 5, False)  # SF7, BW125kHz, CR4/5, LDRO off
