@@ -46,23 +46,39 @@ def calculate_mic(key, msg):
 
 def encrypt_payload(key, devaddr, fcnt, payload):
     """ Encrypts a payload using AES128-CTR """
-    # A block = 0x01 | 4x 0x00 | 0x00 (dir=up) | DevAddr | FCnt (32-bit) | 0x00 | 0x01 (block index)
-    a_block = bytearray(16)
-    a_block[0] = 0x01
-    a_block[5] = 0x00  # 0x00 = Uplink
-    a_block[6:10] = devaddr[::-1]  # Little-endian DevAddr
-    a_block[10:14] = struct.pack('<L', fcnt)  # Little-endian 32-bit FCnt
-    a_block[15] = 0x01  # Block index 1
 
-    # Encrypt the A block to get the S (keystream) block
-    s_block = aes128_encrypt(key, a_block)
-
-    # XOR payload with S block
     encrypted = bytearray()
-    for i in range(len(payload)):
-        encrypted.append(payload[i] ^ s_block[i])
-    
+    block_index = 1
+    payload_len = len(payload)
+
+    # Loop through the payload in 16-byte chunks
+    for i in range(0, payload_len, 16):
+        # 1. Create the A-block (the counter block)
+        a_block = bytearray(16)
+        a_block[0] = 0x01
+        a_block[5] = 0x00  # 0x00 = Uplink
+        a_block[6:10] = devaddr[::-1]  # Little-endian DevAddr
+        a_block[10:14] = struct.pack('<L', fcnt)  # Little-endian 32-bit FCnt
+        a_block[15] = block_index & 0xFF  # Set the block index
+
+        # 2. Encrypt A-block to get S-block (keystream)
+        s_block = aes128_encrypt(key, a_block)
+
+        # 3. Get the current 16-byte chunk of the payload
+        chunk = payload[i : min(i + 16, payload_len)]
+
+        # 4. XOR the chunk with the S-block
+        for j in range(len(chunk)):
+            encrypted.append(chunk[j] ^ s_block[j])
+
+        # 5. Increment the block index for the next loop
+        block_index += 1
+
     return bytes(encrypted)
+
+#
+# --- DELETED THE DUPLICATE, BUGGY encrypt_payload FUNCTION ---
+#
 
 def prepare_lora_packet(data):
     """
@@ -84,7 +100,7 @@ def prepare_lora_packet(data):
 def encode_payload(packet):
     """
     Encodes the data dictionary into a compact byte string for LoRaWAN.
-    
+
     Payload Format (19 bytes total):
     - Temp: 2 bytes (signed short, value * 100)
     - Hum:  2 bytes (unsigned short, value * 100)
@@ -94,7 +110,7 @@ def encode_payload(packet):
     - Alt:  4 bytes (float)
     - Fix:  1 byte (unsigned char, 1=True, 0=False)
     """
-    
+
     # Handle None values from sensors, default to 0
     temp = int((packet.get("temp") or 0) * 100)
     humidity = int((packet.get("humidity") or 0) * 100)
@@ -111,15 +127,15 @@ def encode_payload(packet):
     # f = float (4 bytes)
     # B = unsigned char (1 byte)
     format_string = '<hHHfffB'
-    
+
     try:
-        payload_bytes = struct.pack(format_string, 
-            temp, 
-            humidity, 
-            co_ppm, 
-            lat, 
-            lon, 
-            alt, 
+        payload_bytes = struct.pack(format_string,
+            temp,
+            humidity,
+            co_ppm,
+            lat,
+            lon,
+            alt,
             gps_fix
         )
         return payload_bytes
@@ -133,24 +149,24 @@ def send_data_packet(payload):
 
     print(f"--- Sending ABP Packet (FCnt={frame_counter}) ---")
     lora.setFrequency(TX_FREQ)
-    
+
     # 1. MHDR (0x40 = Unconfirmed Data Up)
     mhdr = 0x40
-    
+
     # 2. FHDR (Frame Header)
     fctrl = 0x00  # No ADR, no ACK, FOptsLen=0
     fcnt_bytes_16 = struct.pack('<H', frame_counter)  # 16-bit FCnt, little-endian
     fhdr = DevAddr[::-1] + bytes([fctrl]) + fcnt_bytes_16
-    
+
     # 3. FPort (e.g., FPort 1)
     fport = 1
-    
+
     # 4. FRMPayload (Encrypted)
     encrypted_payload = encrypt_payload(AppSKey, DevAddr, frame_counter, payload)
-    
+
     # 5. Construct full MAC Payload (for MIC calculation)
     mac_payload = fhdr + bytes([fport]) + encrypted_payload
-    
+
     # 6. Construct B0 block for MIC calculation
     # B0 = 0x49 | 4x 0x00 | 0x00 (dir=up) | DevAddr | FCnt (32-bit) | 0x00 | Len(Msg)
     b0_block = bytearray(16)
@@ -159,9 +175,9 @@ def send_data_packet(payload):
     b0_block[6:10] = DevAddr[::-1]  # Little-endian
     b0_block[10:14] = struct.pack('<L', frame_counter)  # 32-bit FCnt
     b0_block[15] = len(bytes([mhdr]) + mac_payload)  # Length of MHDR + MACPayload
-    
+
     msg_for_mic = b0_block + bytes([mhdr]) + mac_payload
-    
+
     # 7. Calculate MIC
     mic = calculate_mic(NwkSKey, msg_for_mic)
 
@@ -176,14 +192,14 @@ def send_data_packet(payload):
     lora.write(list(phy_payload), len(phy_payload))
     lora.endPacket()
     lora.wait()
-    
+
     print("→ Packet SENT")
 
     frame_counter += 1 # Increment for next packet
 
 # --- Main Execution ---
 if __name__ == "__main__":
-    
+
     # This is a placeholder for your *real* sensor reading code.
     # Replace this with your actual functions that get data.
     def get_all_sensor_data():
@@ -201,7 +217,7 @@ if __name__ == "__main__":
         # Simulate GPS fix loss occasionally
         if random.randint(0, 10) > 8:
             simulated_data["gps"]["fix"] = False
-            
+
         return simulated_data
 
     # Main sensor loop
@@ -209,22 +225,22 @@ if __name__ == "__main__":
         try:
             # 1. Get data from your sensors
             sensor_data = get_all_sensor_data()
-            
+
             # 2. Prepare the data packet (your function)
             packet_dict = prepare_lora_packet(sensor_data)
-            
+
             # 3. Encode the packet into bytes (new function)
             my_payload = encode_payload(packet_dict)
-            
+
             # 4. Send the packet (existing function)
             if my_payload:
                 send_data_packet(my_payload)
             else:
                 print("Skipping send due to payload encoding error.")
-            
+
             print("\nWaiting 60 seconds to send next packet...")
             time.sleep(60)
-        
+
         except KeyboardInterrupt:
             print("\nExiting.")
             sys.exit(0)
