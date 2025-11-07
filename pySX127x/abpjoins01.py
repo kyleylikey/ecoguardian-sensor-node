@@ -33,6 +33,7 @@ TX_FREQ = 916600000  # We'll send on the first channel
 TX_SF = 10           # We use SF10 because it worked for your Join Request
 TX_BW = 125000       # 125kHz bandwidth
 LORA_PACKET_INTERVAL = 30  # seconds between LoRa packet transmissions
+LORA_PACKET_INTERVAL = 10  # seconds between LoRa packet transmissions (shortened for testing)
 
 #--Audio setup--
 AUDIO_DEVICE = "default"
@@ -450,15 +451,34 @@ def send_data_packet(payload):
 
     # 9. Send
     lora.beginPacket()
-    # Ensure we send raw bytes/bytearray to the driver (not a Python list) so the
-    # radio sees the correct payload bytes.
+    print(f"  PHY payload len: {len(phy_payload)} type: {type(phy_payload)}")
+    # The underlying driver expects a list/tuple of integers (or sometimes a
+    # bytearray). Try sending a list of ints first (most common expectation),
+    # then fall back to bytearray, then to bytes without length param.
+    sent_form = None
     try:
-        lora.write(phy_payload, len(phy_payload))
-    except TypeError:
-        # Some drivers expect a bytearray or list; fall back to bytearray
-        lora.write(bytearray(phy_payload), len(phy_payload))
+        data_to_send = list(phy_payload)
+        lora.write(data_to_send, len(data_to_send))
+        sent_form = 'list'
+    except Exception as e:
+        print(f"[LoRa] write with list failed: {e}")
+        try:
+            data_to_send = bytearray(phy_payload)
+            lora.write(data_to_send, len(data_to_send))
+            sent_form = 'bytearray'
+        except Exception as e2:
+            print(f"[LoRa] write with bytearray failed: {e2}")
+            try:
+                # Last resort: pass bytes only (some drivers accept bytes)
+                lora.write(phy_payload)
+                sent_form = 'bytes'
+            except Exception as e3:
+                print(f"[LoRa] final write attempt failed: {e3}")
+                raise
+
     lora.endPacket()
     lora.wait()
+    print(f"  lora.write used: {sent_form}")
 
     print("→ Packet SENT")
 
