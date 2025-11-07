@@ -422,6 +422,8 @@ def send_data_packet(payload):
 
     # 4. FRMPayload (Encrypted)
     encrypted_payload = encrypt_payload(AppSKey, DevAddr, frame_counter, payload)
+    print(f"  Encrypted payload len: {len(encrypted_payload)}")
+    print(f"  Encrypted payload (hex): {encrypted_payload.hex()}")
 
     # 5. Construct full MAC Payload (for MIC calculation)
     mac_payload = fhdr + bytes([fport]) + encrypted_payload
@@ -448,7 +450,13 @@ def send_data_packet(payload):
 
     # 9. Send
     lora.beginPacket()
-    lora.write(list(phy_payload), len(phy_payload))
+    # Ensure we send raw bytes/bytearray to the driver (not a Python list) so the
+    # radio sees the correct payload bytes.
+    try:
+        lora.write(phy_payload, len(phy_payload))
+    except TypeError:
+        # Some drivers expect a bytearray or list; fall back to bytearray
+        lora.write(bytearray(phy_payload), len(phy_payload))
     lora.endPacket()
     lora.wait()
 
