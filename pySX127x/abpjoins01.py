@@ -21,7 +21,10 @@ from Crypto.Hash import CMAC
 DevAddr = bytes.fromhex("0060276b")
 NwkSKey = bytes.fromhex("4dad53a60342ea5b3b0d6a1ca5e80cec")
 AppSKey = bytes.fromhex("249a97f57042ec468d5b5c45302a1af4")
+# Frame counter for LoRaWAN
 frame_counter = 0
+# loop counter for periodic actions (e.g. send every N seconds)
+loop_count = 0
 
 # --- Radio Setup ---
 lora = SX127x()
@@ -319,24 +322,38 @@ def prepare_lora_packet(data):
     Prepare data packet for LoRa transmission.
     Returns a dictionary with all sensor data formatted for transmission.
     """
+    # sensor values may be None; use 'or {}' to fall back to an empty dict
+    th = data.get("temp_humid") or {}
+    gas = data.get("gas") or {}
+    gps = data.get("gps") or {}
+    audio = data.get("audio") or {}
+
     packet = {
         "timestamp": time.time(),
-        "temp": data.get("temp_humid", {}).get("temperature"),
-        "humidity": data.get("temp_humid", {}).get("humidity"),
-        "co_ppm": data.get("gas", {}).get("co_ppm"),
-        "latitude": data.get("gps", {}).get("latitude"),
-        "longitude": data.get("gps", {}).get("longitude"),
-        "altitude": data.get("gps", {}).get("altitude"),
-        "gps_fix": data.get("gps", {}).get("fix", False),
-        "audio_recorded": data.get("audio", {}).get("recorded", False)
+        "temp": th.get("temperature"),
+        "humidity": th.get("humidity"),
+        "co_ppm": gas.get("co_ppm"),
+        "latitude": gps.get("latitude"),
+        "longitude": gps.get("longitude"),
+        "altitude": gps.get("altitude"),
+        "gps_fix": bool(gps.get("fix", False)),
+        "audio_recorded": bool(audio.get("recorded", False))
     }
-    
+
     print("\n📡 LoRa Packet Ready:")
     print(f"   {packet}")
-    
-    # TODO: Send this packet via your LoRa transmission script
-    # Example: lora_send(packet) or save to queue for transmission
-    
+
+    # Encode and send via LoRa
+    payload_bytes = encode_payload(packet)
+    if not payload_bytes:
+        print("[LoRa] Payload encoding failed, skipping send")
+        return packet
+
+    try:
+        send_data_packet(payload_bytes)
+    except Exception as e:
+        print(f"[LoRa] Error sending packet: {e}")
+
     return packet
 
 def encode_payload(packet):
