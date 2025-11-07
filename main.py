@@ -26,7 +26,7 @@ HUMIDITY_DANGER = 20.0
 # MQ-7 Gas Sensor Configuration
 VCC = 5.0
 RL = 10.0
-R0 = 10.0  # IMPORTANT: Calibrate this value in clean air!
+R0 = 489.2278  # IMPORTANT: Calibrated Value. Please recalibrate this value once in a while using the MQ9 Calibrate Script.
 
 # GPS Configuration
 GPS_PORT = "/dev/ttyS0"
@@ -38,7 +38,7 @@ print("Initializing sensors...")
 # DHT22 Temperature & Humidity
 dht_device = adafruit_dht.DHT22(DHT_PIN, use_pulseio=False)
 
-# ADS1115 ADC for MQ-7 Gas Sensor
+# ADS1115 ADC for MQ-9 Gas Sensor
 i2c = busio.I2C(board.SCL, board.SDA)
 ads = ADS.ADS1115(i2c)
 gas_channel = AnalogIn(ads, 0)
@@ -100,7 +100,7 @@ def read_temp_humidity():
         print(f"[DHT22] Unexpected error: {error}")
         return None
 
-# --- Gas Sensor (MQ-7) ---
+# --- Gas Sensor (MQ-9) ---
 def get_resistance(voltage):
     """Calculate sensor resistance from voltage."""
     if voltage <= 0:
@@ -112,7 +112,7 @@ def get_ppm_co(Rs, R0):
     Calculate CO concentration in ppm.
     NOTE: This uses an approximate curve. For accurate readings,
     calibrate R0 in clean air and adjust the curve coefficients
-    based on the MQ-7 datasheet for your specific conditions.
+    based on the MQ-9 datasheet for your specific conditions.
     """
     ratio = Rs / R0
     a = 100.0
@@ -120,7 +120,7 @@ def get_ppm_co(Rs, R0):
     return a * pow(ratio, b)
 
 def read_gas_sensor():
-    """Read MQ-7 gas sensor and calculate CO concentration."""
+    """Read MQ-9 gas sensor and calculate CO concentration."""
     # REMINDER: CALIBRATE R0 VALUE IN CLEAN AIR BEFORE DEPLOYMENT
     # Run sensor in clean air for 24-48 hours and measure stable Rs value
     # Set R0 to that value for accurate ppm readings
