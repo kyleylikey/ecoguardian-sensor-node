@@ -32,7 +32,7 @@ lora.begin()
 TX_FREQ = 916600000  # We'll send on the first channel
 TX_SF = 10           # We use SF10 because it worked for your Join Request
 TX_BW = 125000       # 125kHz bandwidth
-LORA_PACKET_INTERVAL = 10  # seconds between LoRa packet transmissions (shortened for testing)
+LORA_PACKET_INTERVAL = 5  # seconds between LoRa packet transmissions (shortened for testing)
 
 #--Audio setup--
 AUDIO_DEVICE = "default"
@@ -51,7 +51,7 @@ HUMIDITY_DANGER = 20.0
 # MQ-7 Gas Sensor Configuration
 VCC = 5.0
 RL = 10.0
-R0 = 489.2278  # IMPORTANT: Calibrated Value. Please recalibrate this value once in a while using the MQ9 Calibrate Script.
+R0 = 70.278  # IMPORTANT: Calibrated Value. Please recalibrate this value once in a while using the MQ9 Calibrate Script.
 
 # GPS Configuration
 GPS_PORT = "/dev/ttyS0"
@@ -66,7 +66,7 @@ print("Press Ctrl+C to stop.\n")
 
 # --- Set radio parameters for TX ---
 lora.setSyncWord(0x34)  # LoRaWAN Public
-lora.setTxPower(14, 1)
+lora.setTxPower(20, 1)
 lora.setLoRaModulation(TX_SF, TX_BW, 5, False)
 lora.setLoRaPacket(lora.HEADER_EXPLICIT, 8, 255, True, False) # invertIQ=False for uplink
 
@@ -120,7 +120,7 @@ gas_channel = AnalogIn(ads, 0)
 # GPS Serial
 gps_serial = None
 try:
-    gps_serial = serial.Serial(GPS_PORT, baudrate=GPS_BAUDRATE, timeout=1)
+    gps_serial = serial.Serial(GPS_PORT, baudrate=GPS_BAUDRATE, timeout=0.1)
     print("[GPS] Serial port opened successfully")
 except Exception as e:
     print(f"[GPS] ERROR: Could not open serial port: {e}")
@@ -200,9 +200,9 @@ def get_resistance(voltage):
 def get_ppm_co(Rs, R0):
     """Calculate CO concentration in ppm."""
     ratio = Rs / R0
-    a = 100.0
-    b = -1.5
-    return a * pow(ratio, b)
+    a_co = 10.0
+    b_co = -1.8
+    return a_co * pow(ratio, b_co)
 
 def read_gas_sensor():
     """Read MQ-7 gas sensor and calculate CO concentration."""
@@ -270,7 +270,7 @@ def read_gps():
         gps_serial.reset_input_buffer()
         
         # Read up to 50 lines looking for fresh GNGGA sentence
-        for attempt in range(50):
+        for attempt in range(5):
             line = gps_serial.readline().decode(errors="ignore").strip()
             if line.startswith("$GNGGA"):
                 gps_data = parse_gngga(line)
