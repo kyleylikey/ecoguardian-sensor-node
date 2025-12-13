@@ -283,7 +283,7 @@ def read_audio_classification():
 def check_audio_persistence(current_audio_risk_level, history):
     """
     Checks if 'logging' or 'poaching' has been detected in at least 30% of the last 10 readings.
-    Returns the detected risk type (chainsaw/gunshots) or "none".
+    Returns "chainsaw" (if logging detected), "gunshots" (if poaching detected), or "none".
     """
 
     # 1. Update History
