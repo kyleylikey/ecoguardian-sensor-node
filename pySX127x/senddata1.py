@@ -323,7 +323,7 @@ def prepare_lora_packet_json(data, is_alert=False):
             "type": "alert",
             "nodeID": 1,
             "risk_type": data["risk_type"],
-            "risk_level": data["risk_level"] if data.get("risk_level") else None, # risk_level is used for the audio code, but the decoder handles risk_type
+            "fire_risklvl": data["fire_risklvl"] if data.get("fire_risklvl") else None,
             "confidence": data["confidence"] if data.get("confidence") else None
         }
     else:
@@ -514,7 +514,7 @@ if __name__ == "__main__":
                 # Audio Alert: Logging or Poaching
                 alert_payload = {
                     "risk_type": persistent_audio_risk, # "logging" or "poaching"
-                    "risk_level": 1 if persistent_audio_risk == "logging" else 2, # Using risk_level for the decoder's null check
+                    "fire_risklvl": "high" if persistent_audio_risk in ["chainsaw", "gunshots"] else None,
                     "confidence": audio_result.get("confidence")
                 }
                 prepare_lora_packet_json(alert_payload, is_alert=True)
@@ -525,7 +525,7 @@ if __name__ == "__main__":
                 # Fire Alert: Critical Sensor Readings
                 alert_payload = {
                     "risk_type": "fire", # Custom type for fire event
-                    "risk_level": 3, # arbitrary code for fire
+                    "fire_risklvl": "critical",
                     "confidence": None # Confidence is not applicable for fire sensors
                 }
                 prepare_lora_packet_json(alert_payload, is_alert=True)
