@@ -514,7 +514,7 @@ if __name__ == "__main__":
                 # Audio Alert: Chainsaw or Gunshots
                 alert_payload = {
                     "risk_type": persistent_audio_risk, # "chainsaw" or "gunshots"
-                    "fire_risklvl": "high" if persistent_audio_risk in ["chainsaw", "gunshots"] else None,
+                    "fire_risklvl": None,
                     "confidence": audio_result.get("confidence")
                 }
                 prepare_lora_packet_json(alert_payload, is_alert=True)
@@ -522,10 +522,10 @@ if __name__ == "__main__":
                 last_lora_send = current_time
 
             elif is_fire_alert:
-                # Fire Alert: Critical Sensor Readings
+                # Fire Alert: High Risk Level
                 alert_payload = {
-                    "risk_type": "fire", # Custom type for fire event
-                    "fire_risklvl": "critical",
+                    "risk_type": "fire",
+                    "fire_risklvl": "high",
                     "confidence": None # Confidence is not applicable for fire sensors
                 }
                 prepare_lora_packet_json(alert_payload, is_alert=True)
