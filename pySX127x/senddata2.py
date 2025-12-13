@@ -511,9 +511,9 @@ if __name__ == "__main__":
 
             # Prioritize alert packets
             if persistent_audio_risk != "none":
-                # Audio Alert: Logging or Poaching
+                # Audio Alert: Chainsaw or Gunshots
                 alert_payload = {
-                    "risk_type": persistent_audio_risk, # "logging" or "poaching"
+                    "risk_type": persistent_audio_risk, # "chainsaw" or "gunshots"
                     "fire_risklvl": "high" if persistent_audio_risk in ["chainsaw", "gunshots"] else None,
                     "confidence": audio_result.get("confidence")
                 }
