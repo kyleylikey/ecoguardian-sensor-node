@@ -20,7 +20,7 @@ Both scripts implement a function `prepare_lora_packet_json(data, is_alert=False
 
 #### Reading Packets ✅
 
-**Python Script Output:**
+**Python Script Output (senddata1.py with nodeID=1, senddata2.py with nodeID=2):**
 ```json
 {
   "type": "reading",
@@ -35,17 +35,17 @@ Both scripts implement a function `prepare_lora_packet_json(data, is_alert=False
 }
 ```
 
-**ChirpStack Decoder Expected:**
+**ChirpStack Decoder Expected Format:**
 ```javascript
-// Input from Python: 
-{"type":"reading","nodeID":2,"temp":25.5,"humidity":60,"co_ppm":5.2,"latitude":14.5995,"longitude":120.9842,"altitude":50,"gps_fix":true}
+// The decoder expects this structure (nodeID can be any valid node number):
+{"type":"reading","nodeID":<number>,"temp":<number>,"humidity":<number>,"co_ppm":<number>,"latitude":<number>,"longitude":<number>,"altitude":<number>,"gps_fix":<boolean>}
 ```
 
-**Result:** ✅ **MATCH** - All required fields present in correct format
+**Result:** ✅ **MATCH** - All required fields present in correct format, nodeID varies per script (1 or 2)
 
 #### Alert Packets ✅
 
-**Python Script Output (Chainsaw):**
+**Python Script Output - Chainsaw (senddata1.py with nodeID=1, senddata2.py with nodeID=2):**
 ```json
 {
   "type": "alert",
@@ -56,15 +56,15 @@ Both scripts implement a function `prepare_lora_packet_json(data, is_alert=False
 }
 ```
 
-**ChirpStack Decoder Expected:**
+**ChirpStack Decoder Expected Format:**
 ```javascript
-// Input from Python:
-{"type":"alert","nodeID":2,"risk_type":"chainsaw","risk_level":1,"confidence":85.5}
+// The decoder expects this structure (nodeID can be any valid node number):
+{"type":"alert","nodeID":<number>,"risk_type":<string>,"risk_level":<number>,"confidence":<number>}
 ```
 
 **Result:** ✅ **MATCH** - All required fields present in correct format
 
-**Python Script Output (Fire with null):**
+**Python Script Output - Fire with null confidence:**
 ```json
 {
   "type": "alert",
@@ -75,13 +75,13 @@ Both scripts implement a function `prepare_lora_packet_json(data, is_alert=False
 }
 ```
 
-**ChirpStack Decoder Expected:**
+**ChirpStack Decoder Expected Format:**
 ```javascript
-// Input from Python:
-{"type":"alert","nodeID":2,"risk_type":"fire","risk_level":3,"confidence":null}
+// The decoder accepts null for confidence when not applicable:
+{"type":"alert","nodeID":<number>,"risk_type":"fire","risk_level":3,"confidence":null}
 ```
 
-**Result:** ✅ **MATCH** - Null handling works correctly
+**Result:** ✅ **MATCH** - Null handling works correctly, nodeID varies per script (1 or 2)
 
 ### 3. Field-by-Field Comparison
 
