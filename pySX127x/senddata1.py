@@ -282,11 +282,16 @@ def read_audio_classification():
 
 def check_audio_persistence(current_audio_risk_level, history):
     """
-    Checks if 'logging' or 'poaching' has been detected in at least 60% of the last 10 readings.
-    Returns the detected risk level (logging/poaching) or "none".
+    Checks if 'logging' has been detected in at least 30% of the last 10 readings.
+    For 'poaching', returns immediately without persistence check.
+    Returns the detected risk level (chainsaw/gunshots) or "none".
     """
 
-    # 1. Update History
+    # Poaching (gunshots) should be sent immediately without persistence check
+    if current_audio_risk_level == "poaching":
+        return "gunshots"
+
+    # 1. Update History (only for logging)
     history.append(current_audio_risk_level)
     while len(history) > HISTORY_LENGTH:
         history.pop(0)
@@ -295,16 +300,12 @@ def check_audio_persistence(current_audio_risk_level, history):
     if len(history) < HISTORY_LENGTH:
         return "none"
 
-    # 2. Check Persistence
+    # 2. Check Persistence for logging (chainsaw) only
     logging_count = history.count("logging")
-    poaching_count = history.count("poaching")
-
     required_count = len(history) * (PERSISTENCE_THRESHOLD_PCT / 100.0)
 
-    if logging_count >= required_count and logging_count > poaching_count:
+    if logging_count >= required_count:
         return "chainsaw"
-    elif poaching_count >= required_count and poaching_count > logging_count:
-        return "gunshots"
     else:
         return "none"
 
@@ -513,12 +514,16 @@ if __name__ == "__main__":
             if persistent_audio_risk != "none":
                 # Audio Alert: Logging or Poaching
                 alert_payload = {
-                    "risk_type": persistent_audio_risk, # "logging" or "poaching"
-                    "risk_level": 1 if persistent_audio_risk == "logging" else 2, # Using risk_level for the decoder's null check
+                    "risk_type": persistent_audio_risk, # "chainsaw" or "gunshots"
+                    "risk_level": 1 if persistent_audio_risk == "chainsaw" else 2, # Using risk_level for the decoder's null check
                     "confidence": audio_result.get("confidence")
                 }
                 prepare_lora_packet_json(alert_payload, is_alert=True)
-                print(f"!!! 🚨 CRITICAL AUDIO ALERT: {persistent_audio_risk.upper()} (Persistent)")
+                # Different message for chainsaw (persistent) vs gunshots (immediate)
+                if persistent_audio_risk == "chainsaw":
+                    print(f"!!! 🚨 CRITICAL AUDIO ALERT: {persistent_audio_risk.upper()} (Persistent)")
+                else:
+                    print(f"!!! 🚨 CRITICAL AUDIO ALERT: {persistent_audio_risk.upper()} (Immediate)")
                 last_lora_send = current_time
 
             elif is_fire_alert:
