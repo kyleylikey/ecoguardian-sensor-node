@@ -288,10 +288,11 @@ def check_audio_persistence(current_audio_risk_level, history):
     """
 
     # Poaching (gunshots) should be sent immediately without persistence check
+    # Note: We don't add poaching to history to avoid interfering with chainsaw persistence tracking
     if current_audio_risk_level == "poaching":
         return "gunshots"
 
-    # 1. Update History (only for logging)
+    # 1. Update History (for logging and none states)
     history.append(current_audio_risk_level)
     while len(history) > HISTORY_LENGTH:
         history.pop(0)
@@ -498,7 +499,7 @@ if __name__ == "__main__":
             gas = sensor_data["gas"]
             audio_result = sensor_data["audio"]
 
-            # --- Check Audio Persistence Threshold (60% of last 10s) ---
+            # --- Check Audio Persistence Threshold (30% of last 10s for chainsaw, immediate for gunshots) ---
             persistent_audio_risk = check_audio_persistence(
                 audio_result.get("risk_level"), AUDIO_HISTORY
             )
