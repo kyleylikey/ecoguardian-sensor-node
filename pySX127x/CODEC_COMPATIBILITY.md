@@ -98,7 +98,7 @@ The scripts send sensor readings in this format:
 
 ### Function: `prepare_lora_packet_json(data, is_alert=False)`
 
-Location: Lines 313-373 in both senddata1.py and senddata2.py
+Location: Lines 313-369 in senddata1.py and lines 313-373 in senddata2.py
 
 This function:
 1. Creates JSON packets in the exact format expected by the ChirpStack decoder
@@ -115,6 +115,12 @@ This function:
 | NwkSKey | 4dad53a6... | 0537ed2c... |
 | AppSKey | 249a97f5... | bd3b68fc... |
 | nodeID  | 1 | 2 |
+
+**⚠️ Security Note:** The scripts contain LoRaWAN credentials (DevAddr, NwkSKey, AppSKey). These are device-specific keys that should be kept secure. In production deployments:
+- Keep these keys confidential
+- Use separate keys for each sensor node
+- Rotate keys periodically
+- Consider using OTAA (Over-The-Air Activation) instead of ABP for better security
 
 ## Verification
 
