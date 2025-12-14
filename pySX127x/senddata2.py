@@ -321,7 +321,7 @@ def prepare_lora_packet_json(data, is_alert=False):
         # Structure for ALERT type (matches your decoder's alert path)
         packet = {
             "type": "alert",
-            "nodeID": 1,
+            "nodeID": 2,
             "risk_type": data["risk_type"],
             "risk_level": data["risk_level"] if data.get("risk_level") else None, # risk_level is used for the audio code, but the decoder handles risk_type
             "confidence": data["confidence"] if data.get("confidence") else None
@@ -334,7 +334,7 @@ def prepare_lora_packet_json(data, is_alert=False):
 
         packet = {
             "type": "reading",
-            "nodeID": 1,
+            "nodeID": 2,
             "temp": th.get("temperature"),
             "humidity": th.get("humidity"),
             "co_ppm": gas.get("co_ppm"),
@@ -347,6 +347,10 @@ def prepare_lora_packet_json(data, is_alert=False):
         }
 
     json_bytes = json.dumps(packet, separators=(',', ':')).encode('utf-8')
+
+    print(f"\n📤 JSON being sent: {packet}")
+    print(f"   Raw JSON string: {json.dumps(packet, separators=(',', ':'))}")
+    print(f"   JSON bytes length: {len(json_bytes)}")
 
     # --- LoRaWAN Sending Logic ---
     if len(json_bytes) > 200:
