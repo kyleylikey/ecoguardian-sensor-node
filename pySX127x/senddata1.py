@@ -304,10 +304,11 @@ def check_audio_persistence(current_audio_risk_level, history):
     logging_required_count = len(history) * (PERSISTENCE_THRESHOLD_PCT / 100.0)
     poaching_required_count = len(history) * (POACHING_PERSISTENCE_THRESHOLD_PCT / 100.0)
 
-    # Prioritize poaching if it meets the lower threshold
-    if poaching_count >= poaching_required_count and poaching_count > logging_count:
+    # Prioritize poaching (gunshots) over logging (chainsaw) when both meet thresholds
+    # since poaching indicates immediate danger
+    if poaching_count >= poaching_required_count:
         return "gunshots"
-    elif logging_count >= logging_required_count and logging_count >= poaching_count:
+    elif logging_count >= logging_required_count:
         return "chainsaw"
     else:
         return "none"
