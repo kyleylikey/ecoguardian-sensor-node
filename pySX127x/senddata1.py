@@ -33,7 +33,7 @@ lora.begin()
 TX_FREQ = 916600000
 TX_SF = 10
 TX_BW = 125000
-LORA_PACKET_INTERVAL = 10 # seconds between regular LoRa packet transmissions
+LORA_PACKET_INTERVAL = 30 # seconds between regular LoRa packet transmissions
 
 # --- Edge Impulse Audio Classification Setup ---
 MODEL_PATH = "gunshot-and-chainsaw-detection-70%-accuracy-linux-aarch64-v1.eim"
@@ -54,7 +54,8 @@ audio_result_lock = threading.Lock()
 # Stores the last N audio classification results for persistence checking
 AUDIO_HISTORY = []
 HISTORY_LENGTH = 10 # Check against the last 10 seconds (since loop is 1 sec)
-PERSISTENCE_THRESHOLD_PCT = 30 # 30% persistence required (3 out of 10 seconds)
+PERSISTENCE_THRESHOLD_PCT = 30 # 30% persistence required (3 out of 10 seconds) for logging/chainsaw
+POACHING_PERSISTENCE_THRESHOLD_PCT = 10 # 10% persistence required (1 out of 10 seconds) for poaching - less strict
 
 # SENSOR_READ_INTERVAL is used as the loop sleep time
 # CRITICAL: MUST BE 1 second for the 10-second audio persistence check to work
@@ -282,11 +283,12 @@ def read_audio_classification():
 
 def check_audio_persistence(current_audio_risk_level, history):
     """
-    Checks if 'logging' or 'poaching' has been detected in at least 60% of the last 10 readings.
-    Returns the detected risk level (logging/poaching) or "none".
+    Checks if 'logging' has been detected in at least 30% of the last 10 readings.
+    For 'poaching', checks for at least 10% persistence (less strict than logging).
+    Returns the detected risk level (chainsaw/gunshots) or "none".
     """
 
-    # 1. Update History
+    # 1. Update History with current audio risk level
     history.append(current_audio_risk_level)
     while len(history) > HISTORY_LENGTH:
         history.pop(0)
@@ -295,16 +297,19 @@ def check_audio_persistence(current_audio_risk_level, history):
     if len(history) < HISTORY_LENGTH:
         return "none"
 
-    # 2. Check Persistence
+    # 2. Check Persistence for both logging and poaching with different thresholds
     logging_count = history.count("logging")
     poaching_count = history.count("poaching")
 
-    required_count = len(history) * (PERSISTENCE_THRESHOLD_PCT / 100.0)
+    logging_required_count = len(history) * (PERSISTENCE_THRESHOLD_PCT / 100.0)
+    poaching_required_count = len(history) * (POACHING_PERSISTENCE_THRESHOLD_PCT / 100.0)
 
-    if logging_count >= required_count and logging_count > poaching_count:
-        return "chainsaw"
-    elif poaching_count >= required_count and poaching_count > logging_count:
+    # Prioritize poaching (gunshots) over logging (chainsaw) when both meet thresholds
+    # since poaching indicates immediate danger
+    if poaching_count >= poaching_required_count:
         return "gunshots"
+    elif logging_count >= logging_required_count:
+        return "chainsaw"
     else:
         return "none"
 
@@ -493,7 +498,7 @@ if __name__ == "__main__":
             gas = sensor_data["gas"]
             audio_result = sensor_data["audio"]
 
-            # --- Check Audio Persistence Threshold (60% of last 10s) ---
+            # --- Check Audio Persistence Threshold (30% for chainsaw, 10% for gunshots) ---
             persistent_audio_risk = check_audio_persistence(
                 audio_result.get("risk_level"), AUDIO_HISTORY
             )
@@ -513,12 +518,16 @@ if __name__ == "__main__":
             if persistent_audio_risk != "none":
                 # Audio Alert: Logging or Poaching
                 alert_payload = {
-                    "risk_type": persistent_audio_risk, # "logging" or "poaching"
-                    "risk_level": 1 if persistent_audio_risk == "logging" else 2, # Using risk_level for the decoder's null check
+                    "risk_type": persistent_audio_risk, # "chainsaw" or "gunshots"
+                    "risk_level": 1 if persistent_audio_risk == "chainsaw" else 2, # Using risk_level for the decoder's null check
                     "confidence": audio_result.get("confidence")
                 }
                 prepare_lora_packet_json(alert_payload, is_alert=True)
-                print(f"!!! 🚨 CRITICAL AUDIO ALERT: {persistent_audio_risk.upper()} (Persistent)")
+                # Different message for chainsaw (30% persistence) vs gunshots (10% persistence)
+                if persistent_audio_risk == "chainsaw":
+                    print(f"!!! 🚨 CRITICAL AUDIO ALERT: {persistent_audio_risk.upper()} (30% Persistent)")
+                else:
+                    print(f"!!! 🚨 CRITICAL AUDIO ALERT: {persistent_audio_risk.upper()} (10% Persistent)")
                 last_lora_send = current_time
 
             elif is_fire_alert:
